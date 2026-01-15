@@ -2,13 +2,21 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>PimpPong | CRYSTAL CLEAR</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
+    <title>PimpPong | MOBILE OPTIMIZED</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #ffd700; font-family: 'Orbitron', sans-serif; overflow: hidden; touch-action: none; }
-        canvas { display: block; width: 100vw; height: 100vh; }
+        body, html { 
+            margin: 0; padding: 0; 
+            width: 100%; 
+            height: 100vh; 
+            height: 100dvh; /* Nutzt den dynamischen Viewport für Android/iOS */
+            background: #000; color: #ffd700; 
+            font-family: 'Orbitron', sans-serif; 
+            overflow: hidden; touch-action: none; 
+        }
+        canvas { display: block; width: 100%; height: 100%; }
         .header { position: absolute; top: 0; width: 100%; padding: 15px; background: rgba(0,0,0,0.8); z-index: 100; border-bottom: 2px solid #ffd700; text-align: center; pointer-events: none; }
         #leaderboard { position: absolute; bottom: 15px; left: 15px; z-index: 20; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.4); width: 170px; pointer-events: none; }
         table { width: 100%; font-size: 0.6rem; color: #fff; border-collapse: collapse; }
@@ -61,7 +69,12 @@ function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     updatePaddleHeight();
-    paddle.y = canvas.height - 180;
+    
+    // Check ob Mobilgerät
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Setze Paddle-Position höher auf Android, damit der Körper sichtbar ist
+    paddle.y = isMobile ? canvas.height - 220 : canvas.height - 180;
     paddle.x = canvas.width / 2 - paddle.w / 2;
 }
 
@@ -171,9 +184,8 @@ function update() {
 }
 
 function render() {
-    // 1. Hintergrund komplett leeren
     ctx.globalAlpha = 1.0;
-    ctx.shadowBlur = 0; // WICHTIG: Schatten zurücksetzen
+    ctx.shadowBlur = 0;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
@@ -182,7 +194,6 @@ function render() {
         shake *= 0.85; 
     }
 
-    // Partikel zeichnen
     particles.forEach((p, i) => {
         ctx.globalAlpha = p.life; 
         ctx.fillStyle = p.c;
@@ -191,30 +202,22 @@ function render() {
     });
     ctx.globalAlpha = 1.0;
 
-    // Power-Ups zeichnen
     powerUps.forEach(p => {
         ctx.fillStyle = p.type === 'WIDE' ? '#00ccff' : '#00ff66';
         ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI*2); ctx.fill();
     });
 
-    // Paddle zeichnen (Absolut scharf)
     if(paddleImg.complete) {
         ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
     }
 
-    // Ei zeichnen
     ctx.save();
     ctx.translate(ball.x, ball.y); 
     ctx.rotate(wobble * 0.5);
-    
-    // Nur beim Boss ein sauberer roter Schein
     if (ball.bossHP > 0) { 
         ctx.shadowBlur = 20; 
         ctx.shadowColor = "red"; 
-    } else {
-        ctx.shadowBlur = 0;
     }
-    
     ctx.drawImage(eggImg, -ball.r, -ball.r, ball.r*2, ball.r*2);
     ctx.restore();
     
