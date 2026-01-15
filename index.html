@@ -3,6 +3,618 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>PimpPong Arena | CHAOS EGG MODE</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #ffd700; font-family: 'Orbitron', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; z-index: 10; }
+        .header { position: absolute; top: 0; width: 100%; padding: 15px; background: rgba(0,0,0,0.8); z-index: 100; border-bottom: 2px solid #ffd700; text-align: center; pointer-events: none; }
+        #leaderboard { position: absolute; bottom: 15px; left: 15px; z-index: 20; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.4); width: 190px; pointer-events: none; }
+        .timer-display { font-size: 0.55rem; color: #ff4444; margin-bottom: 4px; text-align: center; font-weight: bold; }
+        .leader-title { font-size: 0.65rem; color: #ffd700; text-align: center; margin-bottom: 5px; letter-spacing: 1px; }
+        table { width: 100%; font-size: 0.6rem; border-collapse: collapse; color: #fff; }
+        td { padding: 3px 0; border-bottom: 1px solid #222; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; }
+        #popup { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0a0a0a; border: 3px solid #ffd700; padding: 30px; z-index: 1100; border-radius: 20px; width: 85%; max-width: 380px; text-align: center; }
+        #final-score { font-size: 3.5rem; color: #ffd700; margin: 10px 0; font-weight: 900; }
+        input { width: 100%; padding: 15px; margin-bottom: 15px; background: #111; border: 1px solid #ffd700; color: #fff; font-family: 'Orbitron'; text-align: center; border-radius: 8px; font-size: 0.8rem; }
+        .main-btn { background: #ffd700; color: #000; border: none; padding: 18px; font-weight: 900; width: 100%; cursor: pointer; border-radius: 10px; font-family: 'Orbitron'; font-size: 1.2rem; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3); }
+        .main-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG - CHAOS EGG EDITION</div>
+    <div style="font-size: 1.1rem;">SCORE: <span id="score">0</span> | BEST: <span id="high">0</span></div>
+</div>
+
+<canvas id="pongCanvas"></canvas>
+
+<div id="leaderboard">
+    <div class="timer-display" id="reset-timer">LOADING...</div>
+    <div class="leader-title">TOP CHALLENGERS</div>
+    <table><tbody id="leader-rows"></tbody></table>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div id="popup">
+    <h2 id="status-text" style="margin:0; font-size: 1.5rem;">GAME OVER</h2>
+    <div id="final-score">0</div>
+    <div id="input-container"></div>
+    <button id="actionBtn" class="main-btn">TRY AGAIN</button>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://jmknzhsmlwqwzxguxfor.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impta256aHNtbHdxd3p4Z3V4Zm9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTk4ODQsImV4cCI6MjA4Mzg5NTg4NH0.ZKZ-lTZmc6HoLoAC-MuyejyQCL4WM9ZMgEU_x-yH_L0';
+const PADDLE_URL = 'https://i.ibb.co/s06v3BX/image-8.png';
+const EGG_URL = 'https://i.ibb.co/VYbXg81b/16220.png';
+
+const canvas = document.getElementById("pongCanvas");
+const ctx = canvas.getContext("2d");
+const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
+const eggImg = new Image(); eggImg.src = EGG_URL;
+
+let score = 0, hitCount = 0, gameActive = true, globalTopScores = [];
+let startTime = Date.now(), wobble = 0;
+let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
+const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5 };
+
+function resize() { 
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    if(paddleImg.complete) { 
+        const ratio = paddleImg.naturalHeight / paddleImg.naturalWidth; 
+        paddle.h = paddle.w * ratio; 
+    }
+    paddle.x = canvas.width / 2 - paddle.w / 2; 
+    paddle.y = canvas.height - 240;
+}
+window.addEventListener('resize', resize);
+paddleImg.onload = resize;
+
+const START_DATE = new Date("2024-01-13T12:00:00Z").getTime();
+const CYCLE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function updateMeta() {
+    const now = Date.now(); 
+    const elapsed = now - START_DATE;
+    const currentStart = START_DATE + Math.floor(elapsed / CYCLE_MS) * CYCLE_MS;
+    const next = currentStart + CYCLE_MS; 
+    const diff = next - now;
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+    document.getElementById("reset-timer").innerText = `RESET IN: ${h}h ${m}m ${s}s`;
+    return new Date(currentStart).toISOString();
+}
+
+async function loadScores() {
+    const startISO = updateMeta();
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=wallet,score&created_at=gte.${startISO}&order=score.desc&limit=3`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        globalTopScores = await res.json();
+        document.getElementById("leader-rows").innerHTML = globalTopScores.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right" style="color:#ffd700">${e.score}</td></tr>`).join('') || '<tr><td colspan="3">Arena Open!</td></tr>';
+        if(globalTopScores[0]) document.getElementById("high").innerText = globalTopScores[0].score;
+    } catch(e) { console.error("DB Load Error"); }
+}
+
+function isScoreLegit() {
+    const playTimeSec = (Date.now() - startTime) / 1000;
+    const absoluteMinTime = score * 0.25; // Noch tiefer für Chaos-Modus
+
+    if (score !== hitCount) return false; 
+    if (score > 10 && playTimeSec < absoluteMinTime) return false; 
+    return true;
+}
+
+async function saveScore(wallet) {
+    if(!isScoreLegit()) {
+        alert("Integrity check failed. Play fair!");
+        window.location.reload();
+        return;
+    }
+    const btn = document.getElementById("actionBtn"); 
+    btn.innerText = "VERIFYING..."; btn.disabled = true;
+    try {
+        await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
+            method: 'POST', 
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: wallet, score: score })
+        });
+        window.location.reload();
+    } catch(e) { alert("Error!"); btn.disabled = false; btn.innerText = "SUBMIT SCORE"; }
+}
+
+function showPopup() {
+    gameActive = false; 
+    document.getElementById("final-score").innerText = score;
+    const isTop = globalTopScores.length < 3 || score > (globalTopScores[globalTopScores.length-1]?.score || 0);
+    const btn = document.getElementById("actionBtn"); 
+    const container = document.getElementById("input-container");
+    document.getElementById("overlay").style.display = "block"; document.getElementById("popup").style.display = "block";
+    if(isTop && score > 0) {
+        document.getElementById("status-text").innerText = "NEW ARENA RECORD!";
+        container.innerHTML = '<input type="text" id="walletInput" placeholder="ENTER SOLANA WALLET">';
+        btn.innerText = "SUBMIT SCORE"; 
+        btn.onclick = () => { 
+            const val = document.getElementById("walletInput").value.trim(); 
+            if(val.length < 5) return alert("Enter valid wallet!"); saveScore(val); 
+        };
+    } else {
+        document.getElementById("status-text").innerText = "GAME OVER"; container.innerHTML = '';
+        btn.innerText = "TRY AGAIN"; btn.onclick = () => { window.location.reload(); };
+    }
+}
+
+function draw() {
+    if(!gameActive) return; 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Eier-Wobble-Physik
+    wobble += 0.15;
+    let eggWidth = ball.r + Math.sin(wobble) * 4;
+
+    if(paddleImg.complete) ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+
+    // Ei zeichnen mit Rotation
+    ctx.save(); 
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(wobble * 0.4);
+    if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
+    ctx.restore(); 
+
+    ball.x += ball.dx; ball.y += ball.dy;
+
+    // Wand-Kollision (Unberechenbarer)
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
+        ball.dx *= -1.05; 
+        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
+    }
+    if(ball.y - ball.r < 0) ball.dy *= -1;
+
+    // Paddle-Kollision (Chaos-Ei-Faktor)
+    if(ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+        ball.dy = -Math.abs(ball.dy) * 1.07; 
+        
+        // ZUFALLS-KICK: Das Ei springt unberechenbar zur Seite
+        ball.dx += (Math.random() - 0.5) * 10; 
+        if(Math.abs(ball.dx) > 18) ball.dx *= 0.7; // Speed-Cap
+
+        score++; hitCount++; 
+        document.getElementById("score").innerText = score; 
+        ball.y = paddle.y + 19;
+    }
+
+    if(ball.y > canvas.height) showPopup(); 
+    else requestAnimationFrame(draw);
+}
+
+const move = (e) => { 
+    if(!gameActive) return; 
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX); 
+    paddle.x = clientX - paddle.w/2; 
+};
+window.addEventListener("mousemove", move); 
+window.addEventListener("touchmove", (e) => { move(e); e.preventDefault(); }, {passive:false});
+setInterval(updateMeta, 1000); loadScores(); resize(); draw();
+</script>
+</body>
+</html>
+
+
+Andy G <andydraganic@gmail.com> schrieb am Do., 15. Jan. 2026, 01:28:
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>PimpPong Arena | CHAOS EGG MODE</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #ffd700; font-family: 'Orbitron', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; z-index: 10; }
+        .header { position: absolute; top: 0; width: 100%; padding: 15px; background: rgba(0,0,0,0.8); z-index: 100; border-bottom: 2px solid #ffd700; text-align: center; pointer-events: none; }
+        #leaderboard { position: absolute; bottom: 15px; left: 15px; z-index: 20; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.4); width: 190px; pointer-events: none; }
+        .timer-display { font-size: 0.55rem; color: #ff4444; margin-bottom: 4px; text-align: center; font-weight: bold; }
+        .leader-title { font-size: 0.65rem; color: #ffd700; text-align: center; margin-bottom: 5px; letter-spacing: 1px; }
+        table { width: 100%; font-size: 0.6rem; border-collapse: collapse; color: #fff; }
+        td { padding: 3px 0; border-bottom: 1px solid #222; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; }
+        #popup { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0a0a0a; border: 3px solid #ffd700; padding: 30px; z-index: 1100; border-radius: 20px; width: 85%; max-width: 380px; text-align: center; }
+        #final-score { font-size: 3.5rem; color: #ffd700; margin: 10px 0; font-weight: 900; }
+        input { width: 100%; padding: 15px; margin-bottom: 15px; background: #111; border: 1px solid #ffd700; color: #fff; font-family: 'Orbitron'; text-align: center; border-radius: 8px; font-size: 0.8rem; }
+        .main-btn { background: #ffd700; color: #000; border: none; padding: 18px; font-weight: 900; width: 100%; cursor: pointer; border-radius: 10px; font-family: 'Orbitron'; font-size: 1.2rem; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3); }
+        .main-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG - CHAOS EGG EDITION</div>
+    <div style="font-size: 1.1rem;">SCORE: <span id="score">0</span> | BEST: <span id="high">0</span></div>
+</div>
+
+<canvas id="pongCanvas"></canvas>
+
+<div id="leaderboard">
+    <div class="timer-display" id="reset-timer">LOADING...</div>
+    <div class="leader-title">TOP CHALLENGERS</div>
+    <table><tbody id="leader-rows"></tbody></table>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div id="popup">
+    <h2 id="status-text" style="margin:0; font-size: 1.5rem;">GAME OVER</h2>
+    <div id="final-score">0</div>
+    <div id="input-container"></div>
+    <button id="actionBtn" class="main-btn">TRY AGAIN</button>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://jmknzhsmlwqwzxguxfor.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impta256aHNtbHdxd3p4Z3V4Zm9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTk4ODQsImV4cCI6MjA4Mzg5NTg4NH0.ZKZ-lTZmc6HoLoAC-MuyejyQCL4WM9ZMgEU_x-yH_L0';
+const PADDLE_URL = 'https://i.ibb.co/s06v3BX/image-8.png';
+const EGG_URL = 'https://i.ibb.co/VYbXg81b/16220.png';
+
+const canvas = document.getElementById("pongCanvas");
+const ctx = canvas.getContext("2d");
+const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
+const eggImg = new Image(); eggImg.src = EGG_URL;
+
+let score = 0, hitCount = 0, gameActive = true, globalTopScores = [];
+let startTime = Date.now(), wobble = 0;
+let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
+const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5 };
+
+function resize() { 
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    if(paddleImg.complete) { 
+        const ratio = paddleImg.naturalHeight / paddleImg.naturalWidth; 
+        paddle.h = paddle.w * ratio; 
+    }
+    paddle.x = canvas.width / 2 - paddle.w / 2; 
+    paddle.y = canvas.height - 240;
+}
+window.addEventListener('resize', resize);
+paddleImg.onload = resize;
+
+const START_DATE = new Date("2024-01-13T12:00:00Z").getTime();
+const CYCLE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function updateMeta() {
+    const now = Date.now(); 
+    const elapsed = now - START_DATE;
+    const currentStart = START_DATE + Math.floor(elapsed / CYCLE_MS) * CYCLE_MS;
+    const next = currentStart + CYCLE_MS; 
+    const diff = next - now;
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+    document.getElementById("reset-timer").innerText = `RESET IN: ${h}h ${m}m ${s}s`;
+    return new Date(currentStart).toISOString();
+}
+
+async function loadScores() {
+    const startISO = updateMeta();
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=wallet,score&created_at=gte.${startISO}&order=score.desc&limit=3`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        globalTopScores = await res.json();
+        document.getElementById("leader-rows").innerHTML = globalTopScores.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right" style="color:#ffd700">${e.score}</td></tr>`).join('') || '<tr><td colspan="3">Arena Open!</td></tr>';
+        if(globalTopScores[0]) document.getElementById("high").innerText = globalTopScores[0].score;
+    } catch(e) { console.error("DB Load Error"); }
+}
+
+function isScoreLegit() {
+    const playTimeSec = (Date.now() - startTime) / 1000;
+    const absoluteMinTime = score * 0.25; // Noch tiefer für Chaos-Modus
+
+    if (score !== hitCount) return false; 
+    if (score > 10 && playTimeSec < absoluteMinTime) return false; 
+    return true;
+}
+
+async function saveScore(wallet) {
+    if(!isScoreLegit()) {
+        alert("Integrity check failed. Play fair!");
+        window.location.reload();
+        return;
+    }
+    const btn = document.getElementById("actionBtn"); 
+    btn.innerText = "VERIFYING..."; btn.disabled = true;
+    try {
+        await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
+            method: 'POST', 
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: wallet, score: score })
+        });
+        window.location.reload();
+    } catch(e) { alert("Error!"); btn.disabled = false; btn.innerText = "SUBMIT SCORE"; }
+}
+
+function showPopup() {
+    gameActive = false; 
+    document.getElementById("final-score").innerText = score;
+    const isTop = globalTopScores.length < 3 || score > (globalTopScores[globalTopScores.length-1]?.score || 0);
+    const btn = document.getElementById("actionBtn"); 
+    const container = document.getElementById("input-container");
+    document.getElementById("overlay").style.display = "block"; document.getElementById("popup").style.display = "block";
+    if(isTop && score > 0) {
+        document.getElementById("status-text").innerText = "NEW ARENA RECORD!";
+        container.innerHTML = '<input type="text" id="walletInput" placeholder="ENTER SOLANA WALLET">';
+        btn.innerText = "SUBMIT SCORE"; 
+        btn.onclick = () => { 
+            const val = document.getElementById("walletInput").value.trim(); 
+            if(val.length < 5) return alert("Enter valid wallet!"); saveScore(val); 
+        };
+    } else {
+        document.getElementById("status-text").innerText = "GAME OVER"; container.innerHTML = '';
+        btn.innerText = "TRY AGAIN"; btn.onclick = () => { window.location.reload(); };
+    }
+}
+
+function draw() {
+    if(!gameActive) return; 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Eier-Wobble-Physik
+    wobble += 0.15;
+    let eggWidth = ball.r + Math.sin(wobble) * 4;
+
+    if(paddleImg.complete) ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+
+    // Ei zeichnen mit Rotation
+    ctx.save(); 
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(wobble * 0.4);
+    if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
+    ctx.restore(); 
+
+    ball.x += ball.dx; ball.y += ball.dy;
+
+    // Wand-Kollision (Unberechenbarer)
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
+        ball.dx *= -1.05; 
+        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
+    }
+    if(ball.y - ball.r < 0) ball.dy *= -1;
+
+    // Paddle-Kollision (Chaos-Ei-Faktor)
+    if(ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+        ball.dy = -Math.abs(ball.dy) * 1.07; 
+        
+        // ZUFALLS-KICK: Das Ei springt unberechenbar zur Seite
+        ball.dx += (Math.random() - 0.5) * 10; 
+        if(Math.abs(ball.dx) > 18) ball.dx *= 0.7; // Speed-Cap
+
+        score++; hitCount++; 
+        document.getElementById("score").innerText = score; 
+        ball.y = paddle.y + 19;
+    }
+
+    if(ball.y > canvas.height) showPopup(); 
+    else requestAnimationFrame(draw);
+}
+
+const move = (e) => { 
+    if(!gameActive) return; 
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX); 
+    paddle.x = clientX - paddle.w/2; 
+};
+window.addEventListener("mousemove", move); 
+window.addEventListener("touchmove", (e) => { move(e); e.preventDefault(); }, {passive:false});
+setInterval(updateMeta, 1000); loadScores(); resize(); draw();
+</script>
+</body>
+</html>
+
+
+Andy G <andydraganic@gmail.com> schrieb am Do., 15. Jan. 2026, 01:20:
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+    <title>PimpPong Arena | HARD MODE</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; color: #ffd700; font-family: 'Orbitron', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { position: absolute; top: 0; left: 0; display: block; width: 100%; height: 100%; z-index: 10; }
+        .header { position: absolute; top: 0; width: 100%; padding: 15px; background: rgba(0,0,0,0.8); z-index: 100; border-bottom: 2px solid #ffd700; text-align: center; pointer-events: none; }
+        #leaderboard { position: absolute; bottom: 15px; left: 15px; z-index: 20; background: rgba(0, 0, 0, 0.7); padding: 10px; border-radius: 8px; border: 1px solid rgba(255, 215, 0, 0.4); width: 190px; pointer-events: none; }
+        .timer-display { font-size: 0.55rem; color: #ff4444; margin-bottom: 4px; text-align: center; font-weight: bold; }
+        .leader-title { font-size: 0.65rem; color: #ffd700; text-align: center; margin-bottom: 5px; letter-spacing: 1px; }
+        table { width: 100%; font-size: 0.6rem; border-collapse: collapse; color: #fff; }
+        td { padding: 3px 0; border-bottom: 1px solid #222; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 1000; }
+        #popup { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0a0a0a; border: 3px solid #ffd700; padding: 30px; z-index: 1100; border-radius: 20px; width: 85%; max-width: 380px; text-align: center; }
+        #final-score { font-size: 3.5rem; color: #ffd700; margin: 10px 0; font-weight: 900; }
+        input { width: 100%; padding: 15px; margin-bottom: 15px; background: #111; border: 1px solid #ffd700; color: #fff; font-family: 'Orbitron'; text-align: center; border-radius: 8px; font-size: 0.8rem; }
+        .main-btn { background: #ffd700; color: #000; border: none; padding: 18px; font-weight: 900; width: 100%; cursor: pointer; border-radius: 10px; font-family: 'Orbitron'; font-size: 1.2rem; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3); }
+        .main-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG ARENA - HARD MODE</div>
+    <div style="font-size: 1.1rem;">SCORE: <span id="score">0</span> | BEST: <span id="high">0</span></div>
+</div>
+
+<canvas id="pongCanvas"></canvas>
+
+<div id="leaderboard">
+    <div class="timer-display" id="reset-timer">LOADING...</div>
+    <div class="leader-title">TOP CHALLENGERS</div>
+    <table><tbody id="leader-rows"></tbody></table>
+</div>
+
+<div class="overlay" id="overlay"></div>
+<div id="popup">
+    <h2 id="status-text" style="margin:0; font-size: 1.5rem;">GAME OVER</h2>
+    <div id="final-score">0</div>
+    <div id="input-container"></div>
+    <button id="actionBtn" class="main-btn">TRY AGAIN</button>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://jmknzhsmlwqwzxguxfor.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impta256aHNtbHdxd3p4Z3V4Zm9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTk4ODQsImV4cCI6MjA4Mzg5NTg4NH0.ZKZ-lTZmc6HoLoAC-MuyejyQCL4WM9ZMgEU_x-yH_L0';
+const PADDLE_URL = 'https://i.ibb.co/s06v3BX/image-8.png';
+const EGG_URL = 'https://i.ibb.co/VYbXg81b/16220.png';
+
+const canvas = document.getElementById("pongCanvas");
+const ctx = canvas.getContext("2d");
+const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
+const eggImg = new Image(); eggImg.src = EGG_URL;
+
+let score = 0, hitCount = 0, gameActive = true, globalTopScores = [];
+let startTime = Date.now();
+let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
+const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5 };
+
+function resize() { 
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    if(paddleImg.complete) { 
+        const ratio = paddleImg.naturalHeight / paddleImg.naturalWidth; 
+        paddle.h = paddle.w * ratio; 
+    }
+    paddle.x = canvas.width / 2 - paddle.w / 2; 
+    paddle.y = canvas.height - 240;
+}
+window.addEventListener('resize', resize);
+paddleImg.onload = resize;
+
+const START_DATE = new Date("2024-01-13T12:00:00Z").getTime();
+const CYCLE_MS = 3 * 24 * 60 * 60 * 1000;
+
+function updateMeta() {
+    const now = Date.now(); 
+    const elapsed = now - START_DATE;
+    const currentStart = START_DATE + Math.floor(elapsed / CYCLE_MS) * CYCLE_MS;
+    const next = currentStart + CYCLE_MS; 
+    const diff = next - now;
+    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+    document.getElementById("reset-timer").innerText = `RESET IN: ${h}h ${m}m ${s}s`;
+    return new Date(currentStart).toISOString();
+}
+
+async function loadScores() {
+    const startISO = updateMeta();
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=wallet,score&created_at=gte.${startISO}&order=score.desc&limit=3`, {
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+        });
+        globalTopScores = await res.json();
+        document.getElementById("leader-rows").innerHTML = globalTopScores.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right" style="color:#ffd700">${e.score}</td></tr>`).join('') || '<tr><td colspan="3">Arena Open!</td></tr>';
+        if(globalTopScores[0]) document.getElementById("high").innerText = globalTopScores[0].score;
+    } catch(e) { console.error("DB Load Error"); }
+}
+
+function isScoreLegit() {
+    const playTimeSec = (Date.now() - startTime) / 1000;
+    const absoluteMinTime = score * 0.3; // Optimiert für Touch-Profis
+
+    if (score !== hitCount) return false; 
+    if (score > 10 && playTimeSec < absoluteMinTime) return false; 
+    return true;
+}
+
+async function saveScore(wallet) {
+    if(!isScoreLegit()) {
+        alert("Integrity check failed. Play fair!");
+        window.location.reload();
+        return;
+    }
+    const btn = document.getElementById("actionBtn"); 
+    btn.innerText = "VERIFYING..."; 
+    btn.disabled = true;
+    try {
+        await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
+            method: 'POST', 
+            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ wallet: wallet, score: score })
+        });
+        window.location.reload();
+    } catch(e) { 
+        alert("Network error!"); 
+        btn.disabled = false; 
+        btn.innerText = "SUBMIT SCORE";
+    }
+}
+
+function showPopup() {
+    gameActive = false; 
+    document.getElementById("final-score").innerText = score;
+    const isTop = globalTopScores.length < 3 || score > (globalTopScores[globalTopScores.length-1]?.score || 0);
+    const btn = document.getElementById("actionBtn"); 
+    const container = document.getElementById("input-container");
+    document.getElementById("overlay").style.display = "block"; 
+    document.getElementById("popup").style.display = "block";
+    if(isTop && score > 0) {
+        document.getElementById("status-text").innerText = "NEW ARENA RECORD!";
+        container.innerHTML = '<input type="text" id="walletInput" placeholder="ENTER SOLANA WALLET">';
+        btn.innerText = "SUBMIT SCORE"; 
+        btn.onclick = () => { 
+            const val = document.getElementById("walletInput").value.trim(); 
+            if(val.length < 5) return alert("Enter valid wallet!"); 
+            saveScore(val); 
+        };
+    } else {
+        document.getElementById("status-text").innerText = "GAME OVER"; 
+        container.innerHTML = '';
+        btn.innerText = "TRY AGAIN"; 
+        btn.onclick = () => { window.location.reload(); };
+    }
+}
+
+function draw() {
+    if(!gameActive) return; 
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if(paddleImg.complete) ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+    ctx.save(); ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.clip();
+    if(eggImg.complete) ctx.drawImage(eggImg, ball.x-ball.r, ball.y-ball.r, ball.r*2, ball.r*2);
+    ctx.restore(); 
+    ball.x += ball.dx; ball.y += ball.dy;
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) ball.dx *= -1;
+    if(ball.y - ball.r < 0) ball.dy *= -1;
+    if(ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+        // HARD MODE: Erhöhte Beschleunigung (1.07)
+        ball.dy = -Math.abs(ball.dy) * 1.07; 
+        score++; 
+        hitCount++; 
+        // Ab 100 Punkten auch seitlich schneller werden
+        if(score > 100) ball.dx *= 1.02;
+        document.getElementById("score").innerText = score; 
+        ball.y = paddle.y + 19;
+    }
+    if(ball.y > canvas.height) showPopup(); 
+    else requestAnimationFrame(draw);
+}
+
+const move = (e) => { 
+    if(!gameActive) return; 
+    const clientX = (e.touches ? e.touches[0].clientX : e.clientX); 
+    paddle.x = clientX - paddle.w/2; 
+};
+window.addEventListener("mousemove", move); 
+window.addEventListener("touchmove", (e) => { move(e); e.preventDefault(); }, {passive:false});
+setInterval(updateMeta, 1000); 
+loadScores(); resize(); draw();
+</script>
+</body>
+</html>
+
+
+Andy G <andydraganic@gmail.com> schrieb am Do., 15. Jan. 2026, 00:51:
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>PimpPong Arena | Trinity Challenge</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
