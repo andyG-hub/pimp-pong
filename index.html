@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <title>PimpPong | STABLE & CLEAN</title>
+    <title>PimpPong | BOSS SOUND FIXED</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
@@ -49,10 +49,10 @@ const ctx = canvas.getContext("2d");
 const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
-// --- AUDIO ENGINE (FIXED) ---
+// --- AUDIO ENGINE ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const masterGain = audioCtx.createGain();
-masterGain.gain.value = 0.3; // Verhindert Verzerrung
+masterGain.gain.value = 0.25; 
 masterGain.connect(audioCtx.destination);
 
 let beatStarted = false;
@@ -80,6 +80,7 @@ let score = 0, gameActive = true, particles = [], powerUps = [];
 let paddle = { x: 100, y: 0, w: 140, h: 40, targetW: 140, baseW: 140 };
 let ball = { x: 150, y: 150, r: 20, dx: 4, dy: 4, bossHP: 0 };
 let shake = 0, slowMo = 0, bgFlash = 0, wobble = 0;
+let bossTriggered = false; // Neu: Verhindert Mehrfach-Sound bei Score 50
 
 async function loadScores() {
     try {
@@ -109,15 +110,12 @@ function update() {
 
     const currentDt = slowMo > 0 ? 0.45 : 1;
     
-    // Physik-Sicherheit: Ball darf nicht zu schnell werden
     ball.dx = Math.max(-12, Math.min(12, ball.dx));
-    
-    // Ei-Wobble
     ball.x += (ball.dx + Math.sin(wobble) * 1.5) * currentDt;
     ball.y += ball.dy * currentDt;
     wobble += 0.1;
 
-    // Wall Collision (Hard Lockdown)
+    // Wall Collision
     if(ball.x <= ball.r) { ball.dx = Math.abs(ball.dx); ball.x = ball.r; playBeep(200, 0.05); }
     if(ball.x >= canvas.width - ball.r) { ball.dx = -Math.abs(ball.dx); ball.x = canvas.width - ball.r; playBeep(200, 0.05); }
     if(ball.y <= ball.r) { ball.dy = Math.abs(ball.dy); ball.y = ball.r; }
@@ -130,12 +128,23 @@ function update() {
         ball.y = paddle.y - ball.r;
         score++;
         document.getElementById("score").innerText = score;
-        playBeep(500, 0.1); shake = 6;
         
-        // Particles
+        // Normaler Treffersound (außer bei Boss-Trigger)
+        if (score !== 50) playBeep(500, 0.1); 
+        shake = 6;
+        
         for(let i=0; i<6; i++) particles.push({x: ball.x, y: ball.y, dx:(Math.random()-0.5)*5, dy:(Math.random()-0.5)*5, life:1});
 
-        if (score === 50) { ball.bossHP = 3; ball.r = 60; bgFlash = 0.4; document.getElementById("event-msg").innerText = "BOSS FIGHT!"; }
+        // FIX: BOSS TRIGGER NUR EINMAL AUSFÜHREN
+        if (score === 50 && !bossTriggered) { 
+            bossTriggered = true;
+            ball.bossHP = 3; 
+            ball.r = 60; 
+            bgFlash = 0.5; 
+            document.getElementById("event-msg").innerText = "BOSS FIGHT!"; 
+            playBeep(150, 0.6); // Tiefer, angenehmerer Boss-Sound
+        }
+        
         if (score > 70) paddle.baseW = Math.max(70, paddle.baseW - 1);
         paddle.targetW = paddle.baseW;
     }
