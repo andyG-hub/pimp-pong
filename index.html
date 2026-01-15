@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>PimpPong Arena | PRO PHYSICS</title>
+    <title>PimpPong Arena | IMPACT EDITION</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -25,14 +25,13 @@
 <body>
 
 <div class="header">
-    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG - ARENA</div>
     <div style="font-size: 1.1rem;">SCORE: <span id="score">0</span> | BEST: <span id="high">0</span></div>
 </div>
 
 <canvas id="pongCanvas"></canvas>
 
 <div id="leaderboard">
-    <div class="timer-display" id="reset-timer">LOADING...</div>
+    <div class="timer-display" id="reset-timer">ARENA ACTIVE</div>
     <div class="leader-title">TOP CHALLENGERS</div>
     <table><tbody id="leader-rows"></tbody></table>
 </div>
@@ -57,17 +56,15 @@ const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
 let score = 0, gameActive = true, globalTopScores = [];
-let wobble = 0, powerUpTimer = 0, teleportFrame = 0;
+let wobble = 0, powerUpTimer = 0;
 let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
-const ball = { x: 100, y: 100, r: 20, dx: 5, dy: 5, isGold: false };
+const ball = { x: 150, y: 150, r: 20, dx: 5, dy: 5, isGold: false };
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
-    if(paddleImg.complete) { 
-        paddle.h = paddle.w * (paddleImg.naturalHeight / paddleImg.naturalWidth); 
-    }
+    if(paddleImg.complete) { paddle.h = paddle.w * (paddleImg.naturalHeight / paddleImg.naturalWidth); }
     paddle.x = canvas.width / 2 - paddle.w / 2; 
-    paddle.y = canvas.height - 200;
+    paddle.y = canvas.height - 180; // Leicht nach oben verschoben für besseres Gameplay
 }
 window.addEventListener('resize', resize);
 paddleImg.onload = resize;
@@ -78,32 +75,30 @@ async function loadScores() {
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         });
         const data = await res.json();
-        if (data && data.length > 0) {
+        if (data) {
             globalTopScores = data;
             document.getElementById("leader-rows").innerHTML = data.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right">${e.score}</td></tr>`).join('');
-            document.getElementById("high").innerText = data[0].score;
+            if(data[0]) document.getElementById("high").innerText = data[0].score;
         }
     } catch(e) {}
 }
 
 function checkCollision(pX, pY, pW, pH) {
-    // 1. Prüfen, ob der Ball im vertikalen Bereich des Paddles ist (Präzise Oberkante)
+    const visualOffset = 15; // Korrektur für transparenten Bildrand
     let closestX = Math.max(pX, Math.min(ball.x, pX + pW));
-    let closestY = Math.max(pY, Math.min(ball.y, pY + pH));
+    let closestY = Math.max(pY + visualOffset, Math.min(ball.y, pY + pH));
     
     let distanceX = ball.x - closestX;
     let distanceY = ball.y - closestY;
     let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
 
     if (distanceSquared < (ball.r * ball.r)) {
-        // Seitlicher Treffer? (Wenn der Ball eher horizontal einschlägt)
-        if (Math.abs(distanceX) > Math.abs(distanceY)) {
-            ball.dx *= -1.1; // Abprallen zur Seite
+        if (Math.abs(distanceX) > Math.abs(distanceY) + 5) {
+            ball.dx *= -1.1;
             ball.x = (ball.x < pX) ? pX - ball.r : pX + pW + ball.r;
         } else {
-            // Treffer von Oben
             ball.dy = -Math.abs(ball.dy) * 1.05;
-            ball.y = pY - ball.r; // Setze Ball exakt auf die Kante
+            ball.y = pY + visualOffset - ball.r + 5; // Punktgenaue Landung
             return true;
         }
     }
@@ -122,15 +117,13 @@ function draw() {
     wobble += 0.15;
     let eggWidth = ball.r + Math.sin(wobble) * 4;
 
-    // Paddles zeichnen
     if(paddleImg.complete) {
         ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
-        if (ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/10)%2 !== 0)) {
+        if (ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0)) {
             ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
         }
     }
 
-    // Ei zeichnen
     ctx.save(); 
     ctx.translate(ball.x, ball.y);
     ctx.rotate(wobble * 0.4);
@@ -140,22 +133,20 @@ function draw() {
 
     ball.x += ball.dx; ball.y += ball.dy;
 
-    // Wall Bounce
     if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
         ball.dx *= -1.02; 
         ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
     }
     if(ball.y - ball.r < 0) ball.dy = Math.abs(ball.dy);
 
-    // Kollisionsprüfung für beide Paddles
     let hit1 = checkCollision(paddle.x, paddle.y, paddle.w, paddle.h);
-    let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/10)%2 !== 0);
+    let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0);
     let hit2 = extraVisible && checkCollision(paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
 
     if(hit1 || hit2) {
-        ball.dx += (Math.random() - 0.5) * 8;
+        ball.dx += (Math.random() - 0.5) * 6;
         score++;
-        if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 350; }
+        if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 400; }
         document.getElementById("score").innerText = score; 
     }
 
