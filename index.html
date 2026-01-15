@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>PimpPong Arena | SYNC EDITION</title>
+    <title>PimpPong Arena | HIGH SPEED</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -55,11 +55,15 @@ const eggImg = new Image(); eggImg.src = EGG_URL;
 
 let score = 0, gameActive = true, globalTopScores = [];
 let lastTime = performance.now(), accumulator = 0;
-const dt = 1000 / 60; // 60 FPS Physik-Schritte (Fixed)
+const dt = 1000 / 60; 
 
 let wobble = 0, powerUpTimer = 0, collisionCooldown = 0;
 let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
 const ball = { x: 150, y: 150, r: 20, dx: 6, dy: 6, isGold: false };
+
+// --- SPEED SETTINGS ---
+const MAX_SPEED = 22; // DEUTLICH SCHNELLER
+const START_SPEED = 6;
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -93,12 +97,12 @@ function checkCollision(pX, pY, pW, pH) {
     let dy = ball.y - closestY;
 
     if ((dx * dx + dy * dy) < (ball.r * ball.r)) {
-        collisionCooldown = 15;
+        collisionCooldown = 12; // Etwas kürzerer Cooldown für schnelleres Gameplay
         if (Math.abs(dx) > Math.abs(dy) + 2) {
-            ball.dx = (ball.x < pX + pW/2) ? -Math.abs(ball.dx) * 1.1 : Math.abs(ball.dx) * 1.1;
+            ball.dx = (ball.x < pX + pW/2) ? -Math.abs(ball.dx) * 1.15 : Math.abs(ball.dx) * 1.15;
             ball.x = (ball.x < pX + pW/2) ? pX - ball.r - 2 : pX + pW + ball.r + 2;
         } else {
-            ball.dy = -Math.abs(ball.dy) * 1.05;
+            ball.dy = -Math.abs(ball.dy) * 1.06; // Höhere Beschleunigung pro Treffer
             ball.y = pY + visualOffset - ball.r + 5;
         }
         return true;
@@ -106,7 +110,6 @@ function checkCollision(pX, pY, pW, pH) {
     return false;
 }
 
-// Physik-Update (Läuft immer mit 60 Ticks pro Sekunde)
 function update() {
     if(!gameActive) return;
 
@@ -118,28 +121,27 @@ function update() {
     ball.x += ball.dx; 
     ball.y += ball.dy;
 
-    // Progressive Schwierigkeit: Wird mit jedem Punkt minimal schneller
-    const speedScale = 1 + (score * 0.005);
-    const maxSpeed = 16;
-
+    // Walls
     if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
         ball.dx *= -1; 
         ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
     }
     if(ball.y - ball.r < 0) ball.dy = Math.abs(ball.dy);
 
+    // Collision check
     let hit1 = checkCollision(paddle.x, paddle.y, paddle.w, paddle.h);
     let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0);
     let hit2 = extraVisible && checkCollision(paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
 
     if(hit1 || hit2) {
-        ball.dx += (Math.random() - 0.5) * 6;
+        ball.dx += (Math.random() - 0.5) * 8;
         score++;
         if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 400; }
         document.getElementById("score").innerText = score;
         
-        // Speed Cap Check
-        if(Math.abs(ball.dy) > maxSpeed) ball.dy = maxSpeed * Math.sign(ball.dy);
+        // --- SPEED CAP LOGIC ---
+        if(Math.abs(ball.dx) > MAX_SPEED) ball.dx = MAX_SPEED * Math.sign(ball.dx);
+        if(Math.abs(ball.dy) > MAX_SPEED) ball.dy = MAX_SPEED * Math.sign(ball.dy);
     }
 
     if(ball.y > canvas.height) showPopup();
@@ -169,7 +171,6 @@ function gameLoop(now) {
     let frameTime = now - lastTime;
     lastTime = now;
     accumulator += frameTime;
-
     while (accumulator >= dt) {
         update();
         accumulator -= dt;
