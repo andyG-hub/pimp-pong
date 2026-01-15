@@ -1,9 +1,9 @@
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>PimpPong Arena | CHAOS EGG EDITION</title>
+    <title>PimpPong Arena | PRO PHYSICS</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -19,14 +19,13 @@
         #popup { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #0a0a0a; border: 3px solid #ffd700; padding: 30px; z-index: 1100; border-radius: 20px; width: 85%; max-width: 380px; text-align: center; }
         #final-score { font-size: 3.5rem; color: #ffd700; margin: 10px 0; font-weight: 900; }
         input { width: 100%; padding: 15px; margin-bottom: 15px; background: #111; border: 1px solid #ffd700; color: #fff; font-family: 'Orbitron'; text-align: center; border-radius: 8px; font-size: 0.8rem; }
-        .main-btn { background: #ffd700; color: #000; border: none; padding: 18px; font-weight: 900; width: 100%; cursor: pointer; border-radius: 10px; font-family: 'Orbitron'; font-size: 1.2rem; transition: transform 0.1s; box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3); }
-        .main-btn:active { transform: scale(0.95); }
+        .main-btn { background: #ffd700; color: #000; border: none; padding: 18px; font-weight: 900; width: 100%; cursor: pointer; border-radius: 10px; font-family: 'Orbitron'; font-size: 1.2rem; }
     </style>
 </head>
 <body>
 
 <div class="header">
-    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG - CHAOS EGG EDITION</div>
+    <div style="font-size: 0.6rem; color: #888; letter-spacing: 2px;">PIMPPONG - ARENA</div>
     <div style="font-size: 1.1rem;">SCORE: <span id="score">0</span> | BEST: <span id="high">0</span></div>
 </div>
 
@@ -40,7 +39,7 @@
 
 <div class="overlay" id="overlay"></div>
 <div id="popup">
-    <h2 id="status-text" style="margin:0; font-size: 1.5rem;">GAME OVER</h2>
+    <h2 id="status-text">GAME OVER</h2>
     <div id="final-score">0</div>
     <div id="input-container"></div>
     <button id="actionBtn" class="main-btn">TRY AGAIN</button>
@@ -57,95 +56,58 @@ const ctx = canvas.getContext("2d");
 const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
-let score = 0, hitCount = 0, gameActive = true, globalTopScores = [];
-let startTime = Date.now(), wobble = 0, powerUpTimer = 0, teleportFrame = 0;
+let score = 0, gameActive = true, globalTopScores = [];
+let wobble = 0, powerUpTimer = 0, teleportFrame = 0;
 let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
-const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5, isGold: false };
+const ball = { x: 100, y: 100, r: 20, dx: 5, dy: 5, isGold: false };
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
     if(paddleImg.complete) { 
-        const ratio = paddleImg.naturalHeight / paddleImg.naturalWidth; 
-        paddle.h = paddle.w * ratio; 
+        paddle.h = paddle.w * (paddleImg.naturalHeight / paddleImg.naturalWidth); 
     }
     paddle.x = canvas.width / 2 - paddle.w / 2; 
-    paddle.y = canvas.height - 240;
+    paddle.y = canvas.height - 200;
 }
 window.addEventListener('resize', resize);
 paddleImg.onload = resize;
 
-const START_DATE = new Date("2024-01-13T12:00:00Z").getTime();
-const CYCLE_MS = 3 * 24 * 60 * 60 * 1000;
-
-function updateMeta() {
-    const now = Date.now(); 
-    const elapsed = now - START_DATE;
-    const currentStart = START_DATE + Math.floor(elapsed / CYCLE_MS) * CYCLE_MS;
-    const next = currentStart + CYCLE_MS; 
-    const diff = next - now;
-    const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
-    document.getElementById("reset-timer").innerText = `RESET IN: ${h}h ${m}m ${s}s`;
-    return new Date(currentStart).toISOString();
-}
-
 async function loadScores() {
-    const startISO = updateMeta();
     try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=wallet,score&created_at=gte.${startISO}&order=score.desc&limit=3`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=wallet,score&order=score.desc&limit=3`, {
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         });
         const data = await res.json();
-        if (!data || data.length === 0) {
-            document.getElementById("leader-rows").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px;">Arena Open!</td></tr>';
-        } else {
+        if (data && data.length > 0) {
             globalTopScores = data;
-            document.getElementById("leader-rows").innerHTML = globalTopScores.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right" style="color:#ffd700">${e.score}</td></tr>`).join('');
-            if(globalTopScores[0]) document.getElementById("high").innerText = globalTopScores[0].score;
+            document.getElementById("leader-rows").innerHTML = data.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right">${e.score}</td></tr>`).join('');
+            document.getElementById("high").innerText = data[0].score;
         }
-    } catch(e) { console.error("DB Load Error"); }
+    } catch(e) {}
 }
 
-function isScoreLegit() {
-    const playTimeSec = (Date.now() - startTime) / 1000;
-    const absoluteMinTime = score * 0.22;
-    if (score !== hitCount) return false; 
-    if (score > 15 && playTimeSec < absoluteMinTime) return false; 
-    return true;
-}
+function checkCollision(pX, pY, pW, pH) {
+    // 1. Prüfen, ob der Ball im vertikalen Bereich des Paddles ist (Präzise Oberkante)
+    let closestX = Math.max(pX, Math.min(ball.x, pX + pW));
+    let closestY = Math.max(pY, Math.min(ball.y, pY + pH));
+    
+    let distanceX = ball.x - closestX;
+    let distanceY = ball.y - closestY;
+    let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
 
-async function saveScore(wallet) {
-    if(!isScoreLegit()) { alert("Integrity check failed."); window.location.reload(); return; }
-    const btn = document.getElementById("actionBtn"); 
-    btn.innerText = "VERIFYING..."; btn.disabled = true;
-    try {
-        await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
-            method: 'POST', 
-            headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: wallet, score: score })
-        });
-        window.location.reload();
-    } catch(e) { alert("Error!"); btn.disabled = false; btn.innerText = "SUBMIT SCORE"; }
-}
-
-function showPopup() {
-    gameActive = false; 
-    document.getElementById("final-score").innerText = score;
-    const isTop = globalTopScores.length < 3 || score > (globalTopScores[globalTopScores.length-1]?.score || 0);
-    const btn = document.getElementById("actionBtn"); 
-    const container = document.getElementById("input-container");
-    document.getElementById("overlay").style.display = "block"; document.getElementById("popup").style.display = "block";
-    if(isTop && score > 0) {
-        document.getElementById("status-text").innerText = "NEW ARENA RECORD!";
-        container.innerHTML = '<input type="text" id="walletInput" placeholder="ENTER SOLANA WALLET">';
-        btn.innerText = "SUBMIT SCORE"; 
-        btn.onclick = () => { 
-            const val = document.getElementById("walletInput").value.trim(); 
-            if(val.length < 5) return alert("Enter valid wallet!"); saveScore(val); 
-        };
-    } else {
-        document.getElementById("status-text").innerText = "GAME OVER"; container.innerHTML = '';
-        btn.innerText = "TRY AGAIN"; btn.onclick = () => { window.location.reload(); };
+    if (distanceSquared < (ball.r * ball.r)) {
+        // Seitlicher Treffer? (Wenn der Ball eher horizontal einschlägt)
+        if (Math.abs(distanceX) > Math.abs(distanceY)) {
+            ball.dx *= -1.1; // Abprallen zur Seite
+            ball.x = (ball.x < pX) ? pX - ball.r : pX + pW + ball.r;
+        } else {
+            // Treffer von Oben
+            ball.dy = -Math.abs(ball.dy) * 1.05;
+            ball.y = pY - ball.r; // Setze Ball exakt auf die Kante
+            return true;
+        }
     }
+    return false;
 }
 
 function draw() {
@@ -154,92 +116,68 @@ function draw() {
 
     if (ball.isGold) {
         powerUpTimer--;
-        if (powerUpTimer === 349) teleportFrame = 20; // Starte Teleport-Effekt
         if (powerUpTimer <= 0) ball.isGold = false;
     }
 
     wobble += 0.15;
     let eggWidth = ball.r + Math.sin(wobble) * 4;
 
-    // --- PADDLES ZEICHNEN ---
+    // Paddles zeichnen
     if(paddleImg.complete) {
         ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
-        
-        if (ball.isGold) {
-            let showExtra = true;
-            // Blinken in den letzten 2 Sekunden (ca. 120 Frames)
-            if (powerUpTimer < 120 && Math.floor(powerUpTimer / 10) % 2 === 0) {
-                showExtra = false;
-            }
-
-            if (showExtra) {
-                ctx.save();
-                // Teleportation FX: Blitz-Effekt beim Erscheinen
-                if (teleportFrame > 0) {
-                    ctx.filter = "brightness(3) contrast(2)";
-                    ctx.shadowBlur = 30;
-                    ctx.shadowColor = "#fff";
-                    teleportFrame--;
-                }
-                ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
-                ctx.restore();
-            }
+        if (ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/10)%2 !== 0)) {
+            ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
         }
     }
 
-    // --- EI ZEICHNEN (Verstärkter Glow) ---
+    // Ei zeichnen
     ctx.save(); 
     ctx.translate(ball.x, ball.y);
     ctx.rotate(wobble * 0.4);
-    if (ball.isGold) {
-        ctx.shadowBlur = 45;
-        ctx.shadowColor = "#ffd700";
-        // Interner Kern-Glow
-        ctx.beginPath();
-        ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(255, 215, 0, 0.4)";
-        ctx.fill();
-    }
+    if (ball.isGold) { ctx.shadowBlur = 35; ctx.shadowColor = "#ffd700"; }
     if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
     ctx.restore(); 
 
     ball.x += ball.dx; ball.y += ball.dy;
 
+    // Wall Bounce
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
+        ball.dx *= -1.02; 
+        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
+    }
+    if(ball.y - ball.r < 0) ball.dy = Math.abs(ball.dy);
+
     // Kollisionsprüfung für beide Paddles
-    let hitMain = ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w;
-    
-    // Zweites Paddle nur aktiv, wenn es nicht gerade "ausgeblinkt" ist
-    let extraPaddleVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer / 10) % 2 !== 0);
-    let hitSecond = extraPaddleVisible && ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > (paddle.x + paddle.w + 10) && ball.x < (paddle.x + 2 * paddle.w + 10);
+    let hit1 = checkCollision(paddle.x, paddle.y, paddle.w, paddle.h);
+    let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/10)%2 !== 0);
+    let hit2 = extraVisible && checkCollision(paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
 
-    if((hitMain || hitSecond) && ball.dy > 0) {
-        ball.dy = -Math.abs(ball.dy) * 1.07; 
-        ball.dx += (Math.random() - 0.5) * 12; 
-        if(Math.abs(ball.dx) > 18) ball.dx *= 0.7;
-
-        score++; hitCount++; 
-        if (score % 10 === 0 && score > 0) {
-            ball.isGold = true;
-            powerUpTimer = 350; 
-        }
+    if(hit1 || hit2) {
+        ball.dx += (Math.random() - 0.5) * 8;
+        score++;
+        if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 350; }
         document.getElementById("score").innerText = score; 
-        ball.y = paddle.y + 19;
     }
 
-    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) { ball.dx *= -1.05; ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r; }
-    if(ball.y - ball.r < 0) ball.dy *= -1;
     if(ball.y > canvas.height) showPopup(); 
     else requestAnimationFrame(draw);
 }
 
+function showPopup() {
+    gameActive = false;
+    document.getElementById("final-score").innerText = score;
+    document.getElementById("overlay").style.display = "block";
+    document.getElementById("popup").style.display = "block";
+    document.getElementById("actionBtn").onclick = () => window.location.reload();
+}
+
 const move = (e) => { 
-    if(!gameActive) return; 
     const clientX = (e.touches ? e.touches[0].clientX : e.clientX); 
     paddle.x = clientX - paddle.w/2; 
 };
 window.addEventListener("mousemove", move); 
 window.addEventListener("touchmove", (e) => { move(e); e.preventDefault(); }, {passive:false});
-setInterval(updateMeta, 1000); loadScores(); resize(); draw();
+loadScores(); resize(); draw();
 </script>
 </body>
 </html>
