@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+    <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
@@ -58,9 +58,9 @@ const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
 let score = 0, hitCount = 0, gameActive = true, globalTopScores = [];
-let startTime = Date.now(), wobble = 0;
+let startTime = Date.now(), wobble = 0, powerUpTimer = 0, teleportFrame = 0;
 let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
-const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5 };
+const ball = { x: 100, y: 100, r: 22, dx: 5, dy: 5, isGold: false };
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -95,35 +95,26 @@ async function loadScores() {
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
         });
         const data = await res.json();
-        
         if (!data || data.length === 0) {
-            document.getElementById("leader-rows").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px;">Arena Open! Be the first!</td></tr>';
+            document.getElementById("leader-rows").innerHTML = '<tr><td colspan="3" style="text-align:center; padding:10px;">Arena Open!</td></tr>';
         } else {
             globalTopScores = data;
             document.getElementById("leader-rows").innerHTML = globalTopScores.map((e,i)=>`<tr><td>${i+1}.</td><td>${e.wallet.substring(0,6)}...</td><td align="right" style="color:#ffd700">${e.score}</td></tr>`).join('');
             if(globalTopScores[0]) document.getElementById("high").innerText = globalTopScores[0].score;
         }
-    } catch(e) { 
-        console.error("DB Load Error");
-        document.getElementById("leader-rows").innerHTML = '<tr><td colspan="3">Connection Error</td></tr>';
-    }
+    } catch(e) { console.error("DB Load Error"); }
 }
 
 function isScoreLegit() {
     const playTimeSec = (Date.now() - startTime) / 1000;
-    const absoluteMinTime = score * 0.22; // Toleranter für Touch-Profis
-
+    const absoluteMinTime = score * 0.22;
     if (score !== hitCount) return false; 
     if (score > 15 && playTimeSec < absoluteMinTime) return false; 
     return true;
 }
 
 async function saveScore(wallet) {
-    if(!isScoreLegit()) {
-        alert("Integrity check failed. Play fair!");
-        window.location.reload();
-        return;
-    }
+    if(!isScoreLegit()) { alert("Integrity check failed."); window.location.reload(); return; }
     const btn = document.getElementById("actionBtn"); 
     btn.innerText = "VERIFYING..."; btn.disabled = true;
     try {
@@ -133,7 +124,7 @@ async function saveScore(wallet) {
             body: JSON.stringify({ wallet: wallet, score: score })
         });
         window.location.reload();
-    } catch(e) { alert("Error saving score!"); btn.disabled = false; btn.innerText = "SUBMIT SCORE"; }
+    } catch(e) { alert("Error!"); btn.disabled = false; btn.innerText = "SUBMIT SCORE"; }
 }
 
 function showPopup() {
@@ -161,35 +152,82 @@ function draw() {
     if(!gameActive) return; 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    if (ball.isGold) {
+        powerUpTimer--;
+        if (powerUpTimer === 349) teleportFrame = 20; // Starte Teleport-Effekt
+        if (powerUpTimer <= 0) ball.isGold = false;
+    }
+
     wobble += 0.15;
     let eggWidth = ball.r + Math.sin(wobble) * 4;
 
-    if(paddleImg.complete) ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+    // --- PADDLES ZEICHNEN ---
+    if(paddleImg.complete) {
+        ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+        
+        if (ball.isGold) {
+            let showExtra = true;
+            // Blinken in den letzten 2 Sekunden (ca. 120 Frames)
+            if (powerUpTimer < 120 && Math.floor(powerUpTimer / 10) % 2 === 0) {
+                showExtra = false;
+            }
 
+            if (showExtra) {
+                ctx.save();
+                // Teleportation FX: Blitz-Effekt beim Erscheinen
+                if (teleportFrame > 0) {
+                    ctx.filter = "brightness(3) contrast(2)";
+                    ctx.shadowBlur = 30;
+                    ctx.shadowColor = "#fff";
+                    teleportFrame--;
+                }
+                ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
+                ctx.restore();
+            }
+        }
+    }
+
+    // --- EI ZEICHNEN (Verstärkter Glow) ---
     ctx.save(); 
     ctx.translate(ball.x, ball.y);
     ctx.rotate(wobble * 0.4);
+    if (ball.isGold) {
+        ctx.shadowBlur = 45;
+        ctx.shadowColor = "#ffd700";
+        // Interner Kern-Glow
+        ctx.beginPath();
+        ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(255, 215, 0, 0.4)";
+        ctx.fill();
+    }
     if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
     ctx.restore(); 
 
     ball.x += ball.dx; ball.y += ball.dy;
 
-    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
-        ball.dx *= -1.05; 
-        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
-    }
-    if(ball.y - ball.r < 0) ball.dy *= -1;
+    // Kollisionsprüfung für beide Paddles
+    let hitMain = ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w;
+    
+    // Zweites Paddle nur aktiv, wenn es nicht gerade "ausgeblinkt" ist
+    let extraPaddleVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer / 10) % 2 !== 0);
+    let hitSecond = extraPaddleVisible && ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > (paddle.x + paddle.w + 10) && ball.x < (paddle.x + 2 * paddle.w + 10);
 
-    if(ball.y + ball.r > paddle.y + 20 && ball.y + ball.r < paddle.y + 50 && ball.x > paddle.x && ball.x < paddle.x + paddle.w && ball.dy > 0) {
+    if((hitMain || hitSecond) && ball.dy > 0) {
         ball.dy = -Math.abs(ball.dy) * 1.07; 
         ball.dx += (Math.random() - 0.5) * 12; 
         if(Math.abs(ball.dx) > 18) ball.dx *= 0.7;
 
         score++; hitCount++; 
+        if (score % 10 === 0 && score > 0) {
+            ball.isGold = true;
+            powerUpTimer = 350; 
+        }
         document.getElementById("score").innerText = score; 
         ball.y = paddle.y + 19;
     }
 
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) { ball.dx *= -1.05; ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r; }
+    if(ball.y - ball.r < 0) ball.dy *= -1;
     if(ball.y > canvas.height) showPopup(); 
     else requestAnimationFrame(draw);
 }
