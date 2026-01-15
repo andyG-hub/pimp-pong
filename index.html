@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-    <title>PimpPong Arena | ANTI-HACK EDITION</title>
+    <title>PimpPong Arena | SYNC EDITION</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -54,11 +54,12 @@ const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
 let score = 0, gameActive = true, globalTopScores = [];
+let lastTime = performance.now(), accumulator = 0;
+const dt = 1000 / 60; // 60 FPS Physik-Schritte (Fixed)
+
 let wobble = 0, powerUpTimer = 0, collisionCooldown = 0;
 let paddle = { x: 0, y: 0, w: 140, h: 0 }; 
-const ball = { x: 150, y: 150, r: 20, dx: 5, dy: 5, isGold: false };
-
-const MAX_SPEED = 18; // Verhindert Physik-Glitches
+const ball = { x: 150, y: 150, r: 20, dx: 6, dy: 6, isGold: false };
 
 function resize() { 
     canvas.width = window.innerWidth; canvas.height = window.innerHeight;
@@ -85,7 +86,6 @@ async function loadScores() {
 
 function checkCollision(pX, pY, pW, pH) {
     if (collisionCooldown > 0) return false;
-
     const visualOffset = 15;
     let closestX = Math.max(pX, Math.min(ball.x, pX + pW));
     let closestY = Math.max(pY + visualOffset, Math.min(ball.y, pY + pH));
@@ -93,36 +93,98 @@ function checkCollision(pX, pY, pW, pH) {
     let dy = ball.y - closestY;
 
     if ((dx * dx + dy * dy) < (ball.r * ball.r)) {
-        collisionCooldown = 15; // Sperre für 15 Frames
-
-        // Seitlicher Treffer: Drücke den Ball aktiv raus
+        collisionCooldown = 15;
         if (Math.abs(dx) > Math.abs(dy) + 2) {
             ball.dx = (ball.x < pX + pW/2) ? -Math.abs(ball.dx) * 1.1 : Math.abs(ball.dx) * 1.1;
             ball.x = (ball.x < pX + pW/2) ? pX - ball.r - 2 : pX + pW + ball.r + 2;
         } else {
-            // Treffer von oben
             ball.dy = -Math.abs(ball.dy) * 1.05;
             ball.y = pY + visualOffset - ball.r + 5;
         }
-        
-        // Speed Limit Cap
-        if(Math.abs(ball.dx) > MAX_SPEED) ball.dx = MAX_SPEED * Math.sign(ball.dx);
-        if(Math.abs(ball.dy) > MAX_SPEED) ball.dy = MAX_SPEED * Math.sign(ball.dy);
-
         return true;
     }
     return false;
+}
+
+// Physik-Update (Läuft immer mit 60 Ticks pro Sekunde)
+function update() {
+    if(!gameActive) return;
+
+    if (collisionCooldown > 0) collisionCooldown--;
+    if (ball.isGold) powerUpTimer--;
+    if (powerUpTimer <= 0) ball.isGold = false;
+
+    wobble += 0.15;
+    ball.x += ball.dx; 
+    ball.y += ball.dy;
+
+    // Progressive Schwierigkeit: Wird mit jedem Punkt minimal schneller
+    const speedScale = 1 + (score * 0.005);
+    const maxSpeed = 16;
+
+    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
+        ball.dx *= -1; 
+        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
+    }
+    if(ball.y - ball.r < 0) ball.dy = Math.abs(ball.dy);
+
+    let hit1 = checkCollision(paddle.x, paddle.y, paddle.w, paddle.h);
+    let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0);
+    let hit2 = extraVisible && checkCollision(paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
+
+    if(hit1 || hit2) {
+        ball.dx += (Math.random() - 0.5) * 6;
+        score++;
+        if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 400; }
+        document.getElementById("score").innerText = score;
+        
+        // Speed Cap Check
+        if(Math.abs(ball.dy) > maxSpeed) ball.dy = maxSpeed * Math.sign(ball.dy);
+    }
+
+    if(ball.y > canvas.height) showPopup();
+}
+
+function render() {
+    if(!gameActive) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let eggWidth = ball.r + Math.sin(wobble) * 4;
+
+    if(paddleImg.complete) {
+        ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
+        if (ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0)) {
+            ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
+        }
+    }
+
+    ctx.save(); 
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(wobble * 0.4);
+    if (ball.isGold) { ctx.shadowBlur = 35; ctx.shadowColor = "#ffd700"; }
+    if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
+    ctx.restore(); 
+}
+
+function gameLoop(now) {
+    let frameTime = now - lastTime;
+    lastTime = now;
+    accumulator += frameTime;
+
+    while (accumulator >= dt) {
+        update();
+        accumulator -= dt;
+    }
+    render();
+    requestAnimationFrame(gameLoop);
 }
 
 function showPopup() {
     gameActive = false;
     const currentHigh = parseInt(document.getElementById("high").innerText) || 0;
     const isNewHighscore = score > 0 && (globalTopScores.length < 3 || score > (globalTopScores[2]?.score || 0) || score > currentHigh);
-
     document.getElementById("final-score").innerText = score;
     document.getElementById("overlay").style.display = "block";
     document.getElementById("popup").style.display = "block";
-
     if (isNewHighscore) {
         document.getElementById("status-text").innerText = "NEW ARENA RECORD!";
         document.getElementById("input-container").innerHTML = '<input type="text" id="walletInput" placeholder="ENTER SOLANA WALLET">';
@@ -150,61 +212,14 @@ async function saveScore(wallet) {
     } catch(e) { btn.disabled = false; btn.innerText = "SUBMIT"; }
 }
 
-function draw() {
-    if(!gameActive) return; 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    if (collisionCooldown > 0) collisionCooldown--;
-    if (ball.isGold) powerUpTimer--;
-    if (powerUpTimer <= 0) ball.isGold = false;
-
-    wobble += 0.15;
-    let eggWidth = ball.r + Math.sin(wobble) * 4;
-
-    if(paddleImg.complete) {
-        ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.h);
-        if (ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0)) {
-            ctx.drawImage(paddleImg, paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
-        }
-    }
-
-    ctx.save(); 
-    ctx.translate(ball.x, ball.y);
-    ctx.rotate(wobble * 0.4);
-    if (ball.isGold) { ctx.shadowBlur = 35; ctx.shadowColor = "#ffd700"; }
-    if(eggImg.complete) ctx.drawImage(eggImg, -eggWidth, -ball.r, eggWidth * 2, ball.r * 2);
-    ctx.restore(); 
-
-    ball.x += ball.dx; ball.y += ball.dy;
-
-    if(ball.x + ball.r > canvas.width || ball.x - ball.r < 0) {
-        ball.dx *= -1; 
-        ball.x = (ball.x < ball.r) ? ball.r : canvas.width - ball.r;
-    }
-    if(ball.y - ball.r < 0) ball.dy = Math.abs(ball.dy);
-
-    let hit1 = checkCollision(paddle.x, paddle.y, paddle.w, paddle.h);
-    let extraVisible = ball.isGold && (powerUpTimer >= 120 || Math.floor(powerUpTimer/12)%2 !== 0);
-    let hit2 = extraVisible && checkCollision(paddle.x + paddle.w + 10, paddle.y, paddle.w, paddle.h);
-
-    if(hit1 || hit2) {
-        ball.dx += (Math.random() - 0.5) * 6;
-        score++;
-        if (score % 10 === 0) { ball.isGold = true; powerUpTimer = 400; }
-        document.getElementById("score").innerText = score; 
-    }
-
-    if(ball.y > canvas.height) showPopup(); 
-    else requestAnimationFrame(draw);
-}
-
 const move = (e) => { 
     const clientX = (e.touches ? e.touches[0].clientX : e.clientX); 
     paddle.x = clientX - paddle.w/2; 
 };
 window.addEventListener("mousemove", move); 
 window.addEventListener("touchmove", (e) => { move(e); e.preventDefault(); }, {passive:false});
-loadScores(); resize(); draw();
+
+loadScores(); resize(); requestAnimationFrame(gameLoop);
 </script>
 </body>
 </html>
