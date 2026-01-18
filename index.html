@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <title>PimpPong | SILENT TURBO EDITION</title>
+    <title>PimpPong | COLLISION FIXED</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
@@ -62,7 +62,7 @@ let top3Scores = [];
 let score = 0, seconds = 0, gameActive = true, timerInterval, started = false;
 let particles = [], powerUps = [];
 let paddle = { x: 100, y: 0, w: 140, h: 40, targetW: 140, baseW: 140 };
-let ball = { x: 150, y: 150, r: 20, dx: 4, dy: 4, bossHP: 0 };
+let ball = { x: 150, y: 150, r: 20, dx: 4, dy: 4 };
 let shake = 0, slowMo = 0, speedUp = 0, bgFlash = 0, wobble = 0, bossTriggered = false;
 
 function updateResetTimer() {
@@ -116,13 +116,10 @@ function update() {
         ball.dx = hitPos * 7 + (Math.random()-0.5)*2;
         ball.dy = -Math.abs(ball.dy) * (score < 60 ? 1.04 : 1.01);
         ball.y = paddle.y - ball.r;
-        
         score += (speedUp > 0) ? 2 : 1;
         document.getElementById("score").innerText = score;
-        
         shake = speedUp > 0 ? 15 : 8;
         for(let i=0; i<8; i++) particles.push({x: ball.x, y: ball.y, dx:(Math.random()-0.5)*10, dy:(Math.random()-0.5)*10, life:1});
-        
         if (score >= 50 && !bossTriggered) { bossTriggered = true; ball.r = 60; bgFlash = 0.5; }
     }
 
@@ -131,15 +128,18 @@ function update() {
         let type = 'WIDE';
         if (rand > 0.4) type = 'SLOW';
         if (rand > 0.8) type = 'SPEED';
-        powerUps.push({ x: Math.random()*(canvas.width-20), y: -20, type: type });
+        powerUps.push({ x: Math.random()*(canvas.width-40)+20, y: -20, type: type });
     }
 
     powerUps.forEach((p, i) => {
         p.y += 4;
-        if (p.y > paddle.y && p.x > paddle.x && p.x < paddle.x + paddle.w) {
+        // VERBESSERTE KOLLISION: Prüft jetzt Höhe UND Breite des Paddles
+        if (p.y > paddle.y && p.y < paddle.y + paddle.h && p.x > paddle.x && p.x < paddle.x + paddle.w) {
             if (p.type === 'WIDE') { paddle.targetW = 240; document.getElementById("event-msg").innerText="ULTRA WIDE"; setTimeout(()=>{paddle.targetW=paddle.baseW; document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SLOW') { slowMo = 300; document.getElementById("event-msg").innerText="SLOW MO"; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SPEED') { speedUp = 300; document.getElementById("event-msg").innerText="TURBO (2x PTS)"; bgFlash = 0.3; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
+            powerUps.splice(i, 1);
+        } else if (p.y > canvas.height) {
             powerUps.splice(i, 1);
         }
     });
@@ -152,22 +152,18 @@ function render() {
     ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (bgFlash > 0) { ctx.fillStyle = `rgba(255, 0, 0, ${bgFlash})`; ctx.fillRect(0,0,canvas.width,canvas.height); }
     if (speedUp > 0) { ctx.fillStyle = `rgba(255, 215, 0, ${Math.sin(Date.now()/100)*0.1})`; ctx.fillRect(0,0,canvas.width,canvas.height); }
-    
     ctx.save();
     if (shake > 0) { ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake); shake *= 0.8; }
     particles.forEach(p => { ctx.globalAlpha = p.life; ctx.fillStyle = "#ffd700"; ctx.fillRect(p.x, p.y, 3, 3); });
     ctx.globalAlpha = 1;
-    
     powerUps.forEach(p => { 
         ctx.fillStyle = p.type === 'WIDE' ? '#00ccff' : p.type === 'SLOW' ? '#00ff66' : '#ff0000';
         ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI*2); ctx.fill(); 
     });
-
     if(paddleImg.complete) {
         paddle.w += (paddle.targetW - paddle.w) * 0.1;
         ctx.drawImage(paddleImg, paddle.x, paddle.y, paddle.w, paddle.w * (paddleImg.naturalHeight/paddleImg.naturalWidth));
     }
-    
     ctx.save();
     ctx.translate(ball.x, ball.y); ctx.rotate(wobble);
     ctx.drawImage(eggImg, -ball.r, -ball.r, ball.r*2, ball.r*2);
@@ -181,13 +177,11 @@ function endGame() {
     document.getElementById("overlay").style.display = "block";
     document.getElementById("popup").style.display = "block";
     document.getElementById("final-display").innerText = finalScore;
-
     const minTop3 = top3Scores.length < 3 ? 0 : top3Scores[top3Scores.length - 1].score;
     if (finalScore > minTop3) {
         document.getElementById("save-area").style.display = "block";
         document.getElementById("retryBtn").style.display = "none";
     }
-
     document.getElementById("saveBtn").onclick = async () => {
         const wallet = document.getElementById("walletAddr").value.trim();
         if (wallet.length < 5) return;
@@ -202,18 +196,13 @@ function endGame() {
 }
 
 function handleInput(e) {
-    if (!started) { 
-        started = true; 
-        timerInterval = setInterval(() => { if(gameActive) { seconds++; document.getElementById("timer").innerText = seconds + "s"; } }, 1000);
-    }
+    if (!started) { started = true; timerInterval = setInterval(() => { if(gameActive) { seconds++; document.getElementById("timer").innerText = seconds + "s"; } }, 1000); }
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     paddle.x = clientX - paddle.w/2;
 }
-
 window.addEventListener("mousemove", handleInput);
 window.addEventListener("touchstart", handleInput);
 window.addEventListener("touchmove", (e) => { handleInput(e); e.preventDefault(); }, {passive:false});
-
 loadScores(); resize(); render();
 setInterval(update, 1000/60);
 </script>
