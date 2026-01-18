@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <title>PimpPong | COLLISION FIXED</title>
+    <title>PimpPong | GLITCH FIXED</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
@@ -108,8 +108,19 @@ function update() {
     ball.y += ball.dy * currentDt;
     wobble += 0.1;
 
-    if(ball.x <= ball.r || ball.x >= canvas.width - ball.r) { ball.dx *= -1; }
-    if(ball.y <= ball.r) ball.dy = Math.abs(ball.dy);
+    // GLITCH FIX: Strengere Wand-Kollision
+    if(ball.x <= ball.r) { 
+        ball.dx = Math.abs(ball.dx); 
+        ball.x = ball.r; // Reset an die Wand
+    }
+    if(ball.x >= canvas.width - ball.r) { 
+        ball.dx = -Math.abs(ball.dx); 
+        ball.x = canvas.width - ball.r; // Reset an die Wand
+    }
+    if(ball.y <= ball.r) {
+        ball.dy = Math.abs(ball.dy);
+        ball.y = ball.r;
+    }
 
     if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.h && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
         let hitPos = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
@@ -125,15 +136,12 @@ function update() {
 
     if (Math.random() < 0.007) {
         let rand = Math.random();
-        let type = 'WIDE';
-        if (rand > 0.4) type = 'SLOW';
-        if (rand > 0.8) type = 'SPEED';
+        let type = rand > 0.8 ? 'SPEED' : rand > 0.4 ? 'SLOW' : 'WIDE';
         powerUps.push({ x: Math.random()*(canvas.width-40)+20, y: -20, type: type });
     }
 
     powerUps.forEach((p, i) => {
         p.y += 4;
-        // VERBESSERTE KOLLISION: Prüft jetzt Höhe UND Breite des Paddles
         if (p.y > paddle.y && p.y < paddle.y + paddle.h && p.x > paddle.x && p.x < paddle.x + paddle.w) {
             if (p.type === 'WIDE') { paddle.targetW = 240; document.getElementById("event-msg").innerText="ULTRA WIDE"; setTimeout(()=>{paddle.targetW=paddle.baseW; document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SLOW') { slowMo = 300; document.getElementById("event-msg").innerText="SLOW MO"; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
