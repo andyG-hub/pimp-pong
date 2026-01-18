@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <title>PimpPong | TURBO EDITION</title>
+    <title>PimpPong | SILENT TURBO EDITION</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
@@ -58,21 +58,8 @@ const ctx = canvas.getContext("2d");
 const paddleImg = new Image(); paddleImg.src = PADDLE_URL;
 const eggImg = new Image(); eggImg.src = EGG_URL;
 
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const masterGain = audioCtx.createGain(); masterGain.gain.value = 0.2; masterGain.connect(audioCtx.destination);
-let beatStarted = false, top3Scores = [];
-
-function playBeep(f, d) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-    osc.frequency.setValueAtTime(f, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d);
-    osc.connect(gain); gain.connect(masterGain);
-    osc.start(); osc.stop(audioCtx.currentTime + d);
-}
-
-let score = 0, seconds = 0, gameActive = true, timerInterval;
+let top3Scores = [];
+let score = 0, seconds = 0, gameActive = true, timerInterval, started = false;
 let particles = [], powerUps = [];
 let paddle = { x: 100, y: 0, w: 140, h: 40, targetW: 140, baseW: 140 };
 let ball = { x: 150, y: 150, r: 20, dx: 4, dy: 4, bossHP: 0 };
@@ -81,9 +68,9 @@ let shake = 0, slowMo = 0, speedUp = 0, bgFlash = 0, wobble = 0, bossTriggered =
 function updateResetTimer() {
     const resetDate = new Date("2026-01-21T00:00:00").getTime();
     const diff = resetDate - new Date().getTime();
-    const h = Math.floor(diff / 3600000);
-    const m = Math.floor((diff % 3600000) / 60000);
-    const s = Math.floor((diff % 60000) / 1000);
+    const h = Math.max(0, Math.floor(diff / 3600000));
+    const m = Math.max(0, Math.floor((diff % 3600000) / 60000));
+    const s = Math.max(0, Math.floor((diff % 60000) / 1000));
     document.getElementById("reset-timer").innerText = `${h}h ${m}m ${s}s`;
 }
 setInterval(updateResetTimer, 1000);
@@ -115,13 +102,13 @@ function update() {
 
     let currentDt = 1;
     if (slowMo > 0) currentDt = 0.45;
-    if (speedUp > 0) currentDt = 1.6; // 60% schneller im Turbo
+    if (speedUp > 0) currentDt = 1.6;
 
     ball.x += (ball.dx + Math.sin(wobble) * 1.5) * currentDt;
     ball.y += ball.dy * currentDt;
     wobble += 0.1;
 
-    if(ball.x <= ball.r || ball.x >= canvas.width - ball.r) { ball.dx *= -1; playBeep(200, 0.05); }
+    if(ball.x <= ball.r || ball.x >= canvas.width - ball.r) { ball.dx *= -1; }
     if(ball.y <= ball.r) ball.dy = Math.abs(ball.dy);
 
     if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.h && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
@@ -130,30 +117,26 @@ function update() {
         ball.dy = -Math.abs(ball.dy) * (score < 60 ? 1.04 : 1.01);
         ball.y = paddle.y - ball.r;
         
-        // DOPPELTE PUNKTE BEI SPEEDUP
         score += (speedUp > 0) ? 2 : 1;
         document.getElementById("score").innerText = score;
         
-        playBeep(speedUp > 0 ? 800 : 500, 0.05);
         shake = speedUp > 0 ? 15 : 8;
         for(let i=0; i<8; i++) particles.push({x: ball.x, y: ball.y, dx:(Math.random()-0.5)*10, dy:(Math.random()-0.5)*10, life:1});
         
-        if (score >= 50 && !bossTriggered) { bossTriggered = true; ball.r = 60; playBeep(100, 0.6); }
+        if (score >= 50 && !bossTriggered) { bossTriggered = true; ball.r = 60; bgFlash = 0.5; }
     }
 
-    // PowerUp Chance & Types
     if (Math.random() < 0.007) {
         let rand = Math.random();
         let type = 'WIDE';
         if (rand > 0.4) type = 'SLOW';
-        if (rand > 0.8) type = 'SPEED'; // Neues Speed Powerup
+        if (rand > 0.8) type = 'SPEED';
         powerUps.push({ x: Math.random()*(canvas.width-20), y: -20, type: type });
     }
 
     powerUps.forEach((p, i) => {
         p.y += 4;
         if (p.y > paddle.y && p.x > paddle.x && p.x < paddle.x + paddle.w) {
-            playBeep(1000, 0.1);
             if (p.type === 'WIDE') { paddle.targetW = 240; document.getElementById("event-msg").innerText="ULTRA WIDE"; setTimeout(()=>{paddle.targetW=paddle.baseW; document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SLOW') { slowMo = 300; document.getElementById("event-msg").innerText="SLOW MO"; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SPEED') { speedUp = 300; document.getElementById("event-msg").innerText="TURBO (2x PTS)"; bgFlash = 0.3; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
@@ -219,9 +202,8 @@ function endGame() {
 }
 
 function handleInput(e) {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    if (!beatStarted) { 
-        beatStarted = true; 
+    if (!started) { 
+        started = true; 
         timerInterval = setInterval(() => { if(gameActive) { seconds++; document.getElementById("timer").innerText = seconds + "s"; } }, 1000);
     }
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
