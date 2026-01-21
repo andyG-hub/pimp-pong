@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
-    <title>PimpPong | GLITCH FIXED</title>
+    <title>PimpPong | SECURE VERSION</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: none; }
@@ -22,7 +22,7 @@
 <body>
 
 <div class="header">
-    <div style="text-align:center;"><span style="font-size:0.5rem;">RESET</span><br><span id="reset-timer" style="font-size:0.6rem; color:#ff3e3e;">--:--:--</span></div>
+    <div style="text-align:center;"><span style="font-size:0.5rem;">NEXT RESET</span><br><span id="reset-timer" style="font-size:0.6rem; color:#ff3e3e;">--:--:--</span></div>
     <div style="text-align:center;"><span style="font-size:0.5rem; color:#aaa;">TIME</span><br><span id="timer" class="stat-val">0s</span></div>
     <div style="text-align:center;"><span style="font-size:0.5rem; color:#aaa;">SCORE</span><br><span id="score" class="stat-val">0</span></div>
     <div style="text-align:center;"><span style="font-size:0.5rem; color:#aaa;">MODE</span><br><span id="event-msg" style="color:#00ff66; font-size:0.7rem;">NORMAL</span></div>
@@ -52,6 +52,7 @@ const SUPABASE_URL = 'https://jmknzhsmlwqwzxguxfor.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impta256aHNtbHdxd3p4Z3V4Zm9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzMTk4ODQsImV4cCI6MjA4Mzg5NTg4NH0.ZKZ-lTZmc6HoLoAC-MuyejyQCL4WM9ZMgEU_x-yH_L0';
 const PADDLE_URL = 'https://i.ibb.co/s06v3BX/image-8.png';
 const EGG_URL = 'https://i.ibb.co/VYbXg81b/16220.png';
+const SECRET_SALT = "P1mpP0ng_V2_Secure!"; // Geheimes Wort zur Verifizierung
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -66,8 +67,11 @@ let ball = { x: 150, y: 150, r: 20, dx: 4, dy: 4 };
 let shake = 0, slowMo = 0, speedUp = 0, bgFlash = 0, wobble = 0, bossTriggered = false;
 
 function updateResetTimer() {
-    const resetDate = new Date("2026-01-21T00:00:00").getTime();
-    const diff = resetDate - new Date().getTime();
+    const startDate = new Date("2026-01-21T00:00:00").getTime();
+    const now = new Date().getTime();
+    const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+    const nextResetTime = startDate + (Math.floor((now - startDate) / threeDaysMs) + 1) * threeDaysMs;
+    const diff = nextResetTime - now;
     const h = Math.max(0, Math.floor(diff / 3600000));
     const m = Math.max(0, Math.floor((diff % 3600000) / 60000));
     const s = Math.max(0, Math.floor((diff % 60000) / 1000));
@@ -99,29 +103,15 @@ function update() {
     if (slowMo > 0) slowMo--;
     if (speedUp > 0) speedUp--;
     if (bgFlash > 0) bgFlash -= 0.02;
-
     let currentDt = 1;
     if (slowMo > 0) currentDt = 0.45;
     if (speedUp > 0) currentDt = 1.6;
-
     ball.x += (ball.dx + Math.sin(wobble) * 1.5) * currentDt;
     ball.y += ball.dy * currentDt;
     wobble += 0.1;
-
-    // GLITCH FIX: Strengere Wand-Kollision
-    if(ball.x <= ball.r) { 
-        ball.dx = Math.abs(ball.dx); 
-        ball.x = ball.r; // Reset an die Wand
-    }
-    if(ball.x >= canvas.width - ball.r) { 
-        ball.dx = -Math.abs(ball.dx); 
-        ball.x = canvas.width - ball.r; // Reset an die Wand
-    }
-    if(ball.y <= ball.r) {
-        ball.dy = Math.abs(ball.dy);
-        ball.y = ball.r;
-    }
-
+    if(ball.x <= ball.r) { ball.dx = Math.abs(ball.dx); ball.x = ball.r; }
+    if(ball.x >= canvas.width - ball.r) { ball.dx = -Math.abs(ball.dx); ball.x = canvas.width - ball.r; }
+    if(ball.y <= ball.r) { ball.dy = Math.abs(ball.dy); ball.y = ball.r; }
     if (ball.y + ball.r > paddle.y && ball.y - ball.r < paddle.y + paddle.h && ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
         let hitPos = (ball.x - (paddle.x + paddle.w/2)) / (paddle.w/2);
         ball.dx = hitPos * 7 + (Math.random()-0.5)*2;
@@ -133,13 +123,11 @@ function update() {
         for(let i=0; i<8; i++) particles.push({x: ball.x, y: ball.y, dx:(Math.random()-0.5)*10, dy:(Math.random()-0.5)*10, life:1});
         if (score >= 50 && !bossTriggered) { bossTriggered = true; ball.r = 60; bgFlash = 0.5; }
     }
-
     if (Math.random() < 0.007) {
         let rand = Math.random();
         let type = rand > 0.8 ? 'SPEED' : rand > 0.4 ? 'SLOW' : 'WIDE';
         powerUps.push({ x: Math.random()*(canvas.width-40)+20, y: -20, type: type });
     }
-
     powerUps.forEach((p, i) => {
         p.y += 4;
         if (p.y > paddle.y && p.y < paddle.y + paddle.h && p.x > paddle.x && p.x < paddle.x + paddle.w) {
@@ -147,11 +135,8 @@ function update() {
             else if (p.type === 'SLOW') { slowMo = 300; document.getElementById("event-msg").innerText="SLOW MO"; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             else if (p.type === 'SPEED') { speedUp = 300; document.getElementById("event-msg").innerText="TURBO (2x PTS)"; bgFlash = 0.3; setTimeout(()=>{document.getElementById("event-msg").innerText="NORMAL";}, 5000); }
             powerUps.splice(i, 1);
-        } else if (p.y > canvas.height) {
-            powerUps.splice(i, 1);
-        }
+        } else if (p.y > canvas.height) { powerUps.splice(i, 1); }
     });
-
     particles.forEach((p, i) => { p.x += p.dx; p.y += p.dy; p.life -= 0.03; if(p.life <= 0) particles.splice(i,1); });
     if(ball.y > canvas.height + 50) { gameActive = false; endGame(); }
 }
@@ -179,6 +164,17 @@ function render() {
     if(gameActive) requestAnimationFrame(render);
 }
 
+// HASH FUNKTION ZUR SICHERHEIT
+function generateHash(score, wallet) {
+    const str = score + wallet + SECRET_SALT;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return hash.toString();
+}
+
 function endGame() {
     clearInterval(timerInterval);
     const finalScore = score + Math.floor(seconds / 2);
@@ -193,10 +189,14 @@ function endGame() {
     document.getElementById("saveBtn").onclick = async () => {
         const wallet = document.getElementById("walletAddr").value.trim();
         if (wallet.length < 5) return;
+        
+        // Generiere Sicherheits-Hash
+        const secureHash = generateHash(finalScore, wallet);
+
         await fetch(`${SUPABASE_URL}/rest/v1/leaderboard`, {
             method: 'POST',
             headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallet: wallet, score: finalScore })
+            body: JSON.stringify({ wallet: wallet, score: finalScore, hash: secureHash })
         });
         window.location.reload();
     };
